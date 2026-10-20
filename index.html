@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="おえかき">
+<meta name="theme-color" content="#2B4CB8">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>おえかき</title>
+<style>
+  :root{
+    --desk:#2B4CB8;      /* ふでばこの青 */
+    --desk-dark:#1F3A91;
+    --chip:#EAF0FF;
+    --ink:#1B2A5E;
+    --pick:#FFD23F;      /* えらんでいる道具 */
+    --save:#FF7A45;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-user-select:none;user-select:none;
+    -webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none;background:var(--desk);
+    font-family:"Hiragino Maru Gothic ProN","Hiragino Sans",-apple-system,sans-serif;color:var(--ink)}
+  body{display:flex;flex-direction:column;
+    padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)}
+
+  #stage{flex:1;position:relative;margin:12px 12px 0;background:#fff;border-radius:22px 22px 10px 10px;
+    overflow:hidden;box-shadow:0 6px 0 var(--desk-dark)}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+  #bar{display:flex;align-items:center;gap:12px;overflow-x:auto;touch-action:pan-x;
+    padding:14px 12px calc(12px + env(safe-area-inset-bottom,0px))}
+  #bar::-webkit-scrollbar{display:none}
+  button,label{touch-action:manipulation;font:inherit;color:inherit;cursor:pointer}
+
+  .group{display:flex;align-items:center;gap:8px;flex-shrink:0;
+    background:var(--desk-dark);border-radius:20px;padding:8px 10px}
+
+  /* いろ：絵の具のしずく */
+  .swatch{position:relative;width:46px;height:46px;border-radius:50% 50% 50% 14%;
+    border:3px solid rgba(255,255,255,.9);transform:rotate(-45deg);transition:transform .12s}
+  .swatch.on{transform:rotate(-45deg) scale(1.18);border-color:var(--pick);border-width:4px}
+  .swatch.custom{background:conic-gradient(#f44,#fb3,#ee3,#4c4,#3bf,#47f,#a4f,#f4a,#f44);overflow:hidden}
+  .swatch.custom input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+
+  /* ふとさ */
+  .size{width:50px;height:50px;border-radius:16px;border:none;background:var(--chip);display:grid;place-items:center}
+  .size i{display:block;border-radius:50%;background:var(--ink)}
+  .size.on{background:var(--pick)}
+
+  /* どうぐ */
+  .tool{min-width:66px;height:58px;border-radius:16px;border:none;background:var(--chip);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-size:13px;font-weight:700;padding:0 10px}
+  .tool svg{width:26px;height:26px}
+  .tool.on{background:var(--pick)}
+  .tool.save{background:var(--save);color:#fff}
+  .tool:active,.size:active{transform:translateY(2px)}
+
+  /* ほぞんできなかったときの画面 */
+  #sheet{position:fixed;inset:0;background:rgba(15,25,60,.75);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;padding:24px}
+  #sheet[hidden]{display:none}
+  #sheet img{max-width:90%;max-height:70%;border-radius:12px;background:#fff;
+    -webkit-touch-callout:default;-webkit-user-select:auto}
+  #sheet p{color:#fff;font-size:18px;font-weight:700;text-align:center;line-height:1.6}
+  #sheet button{border:none;background:#fff;border-radius:999px;padding:12px 28px;font-size:17px;font-weight:700}
+</style>
+</head>
+<body>
+  <div id="stage"><canvas id="cv"></canvas></div>
+
+  <div id="bar">
+    <div class="group" id="colors"></div>
+    <div class="group" id="sizes"></div>
+    <div class="group">
+      <button class="tool on" id="pen" aria-label="ペン">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1.2-4.6L16.5 4.1a2 2 0 012.8 0l.6.6a2 2 0 010 2.8L8.6 18.8 4 20z"/><path d="M14.5 6l3.5 3.5"/></svg>
+        ペン</button>
+      <button class="tool" id="eraser" aria-label="けしゴム">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 20H20"/><path d="M4.6 15.4l9.8-9.8a2 2 0 012.8 0l2.2 2.2a2 2 0 010 2.8L11 19H8.2L4.6 15.4z"/><path d="M9.5 10.5l5 5"/></svg>
+        けしゴム</button>
+    </div>
+    <div class="group">
+      <button class="tool" id="undo" aria-label="ひとつもどす">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>
+        もどす</button>
+      <button class="tool" id="clear" aria-label="ぜんぶけす">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
+        ぜんぶけす</button>
+      <button class="tool save" id="save" aria-label="しゃしんにほぞん">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+        ほぞん</button>
+    </div>
+  </div>
+
+  <div id="sheet" hidden>
+    <img id="preview" alt="かいた絵">
+    <p>絵を ながおし して<br>「“写真”に保存」を えらんでね</p>
+    <button id="closeSheet">とじる</button>
+  </div>
+
+<script>
+(() => {
+  const COLORS = ['#1F1F1F','#E8333A','#FF8A1F','#FFD21F','#3CB44B','#2BB5E8','#2F5BE0','#9B4DDB','#FF6FB0','#8B5A2B','#FFFFFF'];
+  const SIZES  = [3, 8, 16, 32];
+
+  const stage = document.getElementById('stage');
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+
+  const state = { color: COLORS[0], size: SIZES[1], eraser: false };
+  const strokes = [];          // かいた線の記録（もどす・画面回転で描きなおすため）
+  let cur = null, activeId = null, rect = null, dpr = 1;
+
+  // ---------- ツールバー ----------
+  const colorsEl = document.getElementById('colors');
+  COLORS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'swatch' + (i === 0 ? ' on' : '');
+    b.style.background = c;
+    b.setAttribute('aria-label', 'いろ ' + c);
+    b.onclick = () => setColor(c, b);
+    colorsEl.appendChild(b);
+  });
+  const custom = document.createElement('label');
+  custom.className = 'swatch custom';
+  custom.setAttribute('aria-label', 'すきないろ');
+  const picker = document.createElement('input');
+  picker.type = 'color'; picker.value = '#00A99D';
+  picker.oninput = () => setColor(picker.value, custom);
+  custom.appendChild(picker);
+  colorsEl.appendChild(custom);
+
+  function setColor(c, el) {
+    state.color = c;
+    colorsEl.querySelectorAll('.swatch').forEach(s => s.classList.toggle('on', s === el));
+    setEraser(false);
+  }
+
+  const sizesEl = document.getElementById('sizes');
+  SIZES.forEach(s => {
+    const b = document.createElement('button');
+    b.className = 'size' + (s === state.size ? ' on' : '');
+    b.setAttribute('aria-label', 'ふとさ ' + s);
+    const dot = document.createElement('i');
+    const d = Math.max(5, Math.min(34, s));
+    dot.style.width = dot.style.height = d + 'px';
+    b.appendChild(dot);
+    b.onclick = () => {
+      state.size = s;
+      sizesEl.querySelectorAll('.size').forEach(x => x.classList.toggle('on', x === b));
+    };
+    sizesEl.appendChild(b);
+  });
+
+  const penBtn = document.getElementById('pen');
+  const eraserBtn = document.getElementById('eraser');
+  function setEraser(on) {
+    state.eraser = on;
+    penBtn.classList.toggle('on', !on);
+    eraserBtn.classList.toggle('on', on);
+  }
+  penBtn.onclick = () => setEraser(false);
+  eraserBtn.onclick = () => setEraser(true);
+
+  document.getElementById('undo').onclick = () => { strokes.pop(); redraw(); };
+  document.getElementById('clear').onclick = () => {
+    if (!visible().length) return;
+    if (confirm('ぜんぶ けしても いい？')) { strokes.push({ clear: true }); redraw(); }
+  };
+
+  // ---------- キャンバス ----------
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
+    cv.width = Math.round(r.width * dpr);
+    cv.height = Math.round(r.height * dpr);
+    redraw();
+  }
+  // 「ぜんぶけす」より後の線だけを描く
+  function visible() {
+    let i = strokes.length - 1;
+    while (i >= 0 && !strokes[i].clear) i--;
+    return strokes.slice(i + 1);
+  }
+  function redraw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    for (const s of visible()) {
+      if (s.points.length === 1) { dot(s); continue; }
+      for (let i = 1; i < s.points.length; i++) seg(s, i);
+      tail(s);
+    }
+  }
+  function applyStyle(s) {
+    ctx.globalCompositeOperation = s.eraser ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = ctx.fillStyle = s.color;
+    ctx.lineWidth = s.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  function dot(s) {
+    applyStyle(s);
+    const p = s.points[0];
+    ctx.beginPath(); ctx.arc(p.x, p.y, s.size / 2, 0, Math.PI * 2); ctx.fill();
+  }
+  // なめらかな線：前の中点 → 今の中点 を、ひとつ前の点を制御点にして曲線でつなぐ
+  function seg(s, i) {
+    applyStyle(s);
+    const p = s.points, a = p[i - 2] || p[i - 1], b = p[i - 1], c = p[i];
+    const m1 = mid(a, b), m2 = mid(b, c);
+    ctx.beginPath(); ctx.moveTo(m1.x, m1.y); ctx.quadraticCurveTo(b.x, b.y, m2.x, m2.y); ctx.stroke();
+  }
+  function tail(s) {
+    const p = s.points, n = p.length;
+    if (n < 2) return;
+    applyStyle(s);
+    const m = mid(p[n - 2], p[n - 1]);
+    ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(p[n - 1].x, p[n - 1].y); ctx.stroke();
+  }
+
+  const pos = e => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+
+  cv.addEventListener('pointerdown', e => {
+    if (activeId !== null) return;            // 2本目の指は無視
+    activeId = e.pointerId;
+    cv.setPointerCapture(e.pointerId);
+    rect = cv.getBoundingClientRect();
+    cur = {
+      color: state.color,
+      size: state.eraser ? state.size * 2 : state.size,
+      eraser: state.eraser,
+      points: [pos(e)]
+    };
+    strokes.push(cur);
+    dot(cur);
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', e => {
+    if (e.pointerId !== activeId || !cur) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])) {
+      const p = pos(ev), last = cur.points[cur.points.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 0.7) continue;
+      cur.points.push(p);
+      seg(cur, cur.points.length - 1);
+    }
+    e.preventDefault();
+  });
+  const end = e => {
+    if (e.pointerId !== activeId) return;
+    if (cur) tail(cur);
+    cur = null; activeId = null;
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+
+  // ---------- しゃしんにほぞん ----------
+  const sheet = document.getElementById('sheet');
+  const preview = document.getElementById('preview');
+  document.getElementById('closeSheet').onclick = () => { sheet.hidden = true; };
+
+  document.getElementById('save').onclick = async () => {
+    // 白い紙の上に絵を重ねて1枚の画像にする（けしゴムの部分も白になる）
+    const out = document.createElement('canvas');
+    out.width = cv.width; out.height = cv.height;
+    const o = out.getContext('2d');
+    o.fillStyle = '#fff'; o.fillRect(0, 0, out.width, out.height);
+    o.drawImage(cv, 0, 0);
+
+    // 共有シートを確実に開けるよう、画像化はボタンを押した直後に同期で行う
+    const dataUrl = out.toDataURL('image/png');
+    const bin = atob(dataUrl.split(',')[1]);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const d = new Date(), z = n => String(n).padStart(2, '0');
+    const name = `oekaki-${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.png`;
+    const file = new File([bytes], name, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (err) { if (err.name === 'AbortError') return; }
+    }
+    preview.src = dataUrl;      // 共有が使えないときは、ながおし保存に切りかえ
+    sheet.hidden = false;
+  };
+
+  // ---------- iPad向けの細かい対策 ----------
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault()));
+  document.addEventListener('dblclick', e => e.preventDefault());
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+  resize();
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
